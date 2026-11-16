@@ -168,13 +168,13 @@ let SharedAssets = null;
 
 let mainDirLight = null;
 let ambientHemiLight = null;
-let cameraLookTarget = new THREE.Vector3(0, 1.5, -14);
+let cameraLookTarget = typeof THREE !== 'undefined' ? new THREE.Vector3(0, 1.5, -14) : null;
 
 // Pre-allocated scratch vectors for zero-GC render loop
-const _evalPos = new THREE.Vector3();
-const _evalTan = new THREE.Vector3();
-const _camGoalPos = new THREE.Vector3();
-const _camGoalTarget = new THREE.Vector3();
+let _evalPos = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+let _evalTan = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+let _camGoalPos = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+let _camGoalTarget = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
 let cameraLerpActive = false;
 
 function getPBRColors() {
@@ -349,11 +349,25 @@ function initSharedAssets(colors) {
  * Inicialización de Three.js
  */
 function initThreeJS() {
+  setupMobileSheetTouch();
+  setupMobileRadialMenuGesture();
+
   containerElement = document.getElementById('threeCanvasContainer');
   if (!containerElement) return;
 
-  const width = containerElement.clientWidth || 800;
-  const height = containerElement.clientHeight || 600;
+  if (typeof THREE === 'undefined') {
+    updateLiveFeedUI('Motor 3D no disponible (Three.js no cargado).');
+    return;
+  }
+
+  if (!cameraLookTarget) cameraLookTarget = new THREE.Vector3(0, 1.5, -14);
+  if (!_evalPos) _evalPos = new THREE.Vector3();
+  if (!_evalTan) _evalTan = new THREE.Vector3();
+  if (!_camGoalPos) _camGoalPos = new THREE.Vector3();
+  if (!_camGoalTarget) _camGoalTarget = new THREE.Vector3();
+
+  const width = containerElement.clientWidth || window.innerWidth || 380;
+  const height = containerElement.clientHeight || window.innerHeight || 500;
 
   clock = new THREE.Clock();
   scene = new THREE.Scene();
@@ -363,7 +377,12 @@ function initThreeJS() {
 
   camera = new THREE.PerspectiveCamera(AppState.mode === 'mobile' ? 45 : 38, width / height, 0.5, 600);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+  } catch (err) {
+    updateLiveFeedUI('WebGL no soportado en este dispositivo.');
+    return;
+  }
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
@@ -404,8 +423,6 @@ function initThreeJS() {
 
   setupOrbitControls();
   setupRaycastSelection();
-  setupMobileSheetTouch();
-  setupMobileRadialMenuGesture();
   rebuildParking3D();
   syncAssignedBayUI();
   setCameraCampusOverview(true);
