@@ -1,0 +1,10 @@
+{
+  "name": "IADA Park — Campus 3D",
+  "short_name": "IADA Park",
+  "description": "Disponibilidad en vivo y navegación 3D de estacionamientos del campus.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#163a70",
+  "background_color": "#eef2f7"
+}

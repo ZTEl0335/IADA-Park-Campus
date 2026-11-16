@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#163a70">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <title>IADA Park — Campus 3D Parking & Real-Time Simulation</title>
+
+  <!-- Dependencias locales (sin rastreadores ni CDNs externos) -->
+  <script src="vendor/lucide.min.js"></script>
+  <script src="vendor/three.min.js"></script>
+
+  <!-- Estilos modulares externos -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- SIMULADOR WIREFRAME: BARRA DE CONTROL GLOBAL -->
+  <header class="wireframe-banner">
+    <div class="meta-title">
+      <div class="meta-brand">
+        <i data-lucide="graduation-cap" style="color: var(--accent); width: 17px; height: 17px;"></i>
+        <span>IADA Park 3D</span>
+      </div>
+      <span style="color: var(--text-subtle);">|</span>
+      <span>Simulación en Tiempo Real</span>
+    </div>
+
+    <div class="sim-controls">
+      <!-- Indicador y Control del Motor de Simulación en Vivo -->
+      <div class="simulation-bar">
+        <span class="sim-status-dot" id="simDot"></span>
+        <span class="sim-live-label">Flujo en Vivo</span>
+        <button class="sim-btn-action" id="btnToggleSim" onclick="toggleSimulation()">
+          <i data-lucide="pause" style="width: 12px; height: 12px;"></i> Pausar
+        </button>
+        <button class="sim-btn-action sim-btn-params" id="btnSimParams" onclick="toggleSimConfigPanel()">
+          <i data-lucide="sliders-horizontal" style="width: 12px; height: 12px;"></i> Parámetros
+        </button>
+      </div>
+
+      <!-- Selector de Modo Claro (Default) / Oscuro -->
+      <div class="segmented-control">
+        <button class="seg-btn active" id="btn-theme-light" onclick="setTheme('light')">
+          <i data-lucide="sun" style="width: 13px; height: 13px;"></i>
+          Claro
+        </button>
+        <button class="seg-btn" id="btn-theme-dark" onclick="setTheme('dark')">
+          <i data-lucide="moon" style="width: 13px; height: 13px;"></i>
+          Oscuro
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- LIENZO PRINCIPAL -->
+  <main class="viewport-canvas">
+    <div class="app-frame" id="appFrame">
+
+      <!-- HEADER INTERNO DE LA APP -->
+      <nav class="app-header">
+        <div class="logo-container">
+          <div class="institution-crest">I</div>
+          <div class="logo-text">
+            <span class="logo-title">IADA Park Campus</span>
+            <span class="logo-subtitle" id="headerSubtitleText">Disponibilidad en Vivo</span>
+          </div>
+        </div>
+
+        <!-- Controles Desktop -->
+        <div class="header-user-role desktop-only-role">
+          <div class="role-badge">
+            <i data-lucide="badge-check" style="width: 13px; height: 13px;"></i>
+            <span>Estudiante Matrícula Activa</span>
+          </div>
+          <button class="btn-wire" style="padding: 4px 8px;" title="Alternar perfil universitario" onclick="toggleRole()">
+            <i data-lucide="users" style="width: 13px; height: 13px;"></i>
+            <span id="roleLabel">Ver como: Docente</span>
+          </button>
+        </div>
+
+        <!-- Acción minimalista en Móvil: Destino fijo a 1 toque + Tema -->
+        <div class="mobile-header-actions">
+          <button class="mobile-theme-btn" id="btnMobileTheme" onclick="toggleTheme()" title="Cambiar tema Claro / Oscuro" aria-label="Cambiar tema">
+            <i data-lucide="moon" style="width: 13px; height: 13px;"></i>
+          </button>
+          <button class="mobile-bay-pill" onclick="setCameraBay()" title="Ir a mi cajón agendado">
+            <i data-lucide="navigation-2" style="width: 11px; height: 11px;"></i>
+            <span>Mi Cajón <strong id="mobileBayPillCode">Sin asignar</strong></span>
+            <span class="mobile-pill-timer" id="mobilePillTimer">--:--</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- CUERPO DE LA APP -->
+      <div class="app-body">
+        
+        <!-- SIDEBAR DE ZONAS (En móvil: Bottom Sheet de baja carga cognitiva) -->
+        <aside class="sidebar sheet-collapsed" id="zonesSidebar">
+          <div class="sidebar-header" onclick="toggleMobileSheet()">
+            <div class="drawer-pill-handle"></div>
+            <div class="sidebar-peek-row">
+              <div class="sidebar-peek-left">
+                <h2 class="sidebar-title">Zonas del Campus</h2>
+                <span class="mobile-peek-summary" id="mobilePeekSummary">Central • 78 libres</span>
+              </div>
+              <span class="lock-banner-badge desktop-only-badge">
+                <i data-lucide="lock" style="width: 10px; height: 10px; color: var(--accent);"></i>
+                Lugar Asignado Fijo
+              </span>
+              <span class="mobile-sheet-chevron" id="mobileSheetChevron">
+                <i data-lucide="chevron-up" style="width: 15px; height: 15px;"></i>
+              </span>
+            </div>
+
+            <!-- Indicador del protocolo de desahogo (oculto en modo colapsado móvil) -->
+            <div class="campus-status-pill">
+              <div style="display: flex; align-items: center; gap: 5px;">
+                <i data-lucide="info" style="width: 12px; height: 12px; color: var(--accent);"></i>
+                <span>Protocolo de Desahogo</span>
+              </div>
+              <span style="font-weight: 700; color: var(--accent);">Activo</span>
+            </div>
+          </div>
+
+          <div class="lots-list">
+            
+            <!-- ESTACIONAMIENTO 1: Principal Multinivel -->
+            <div class="lot-card active" id="card-lot-1" onclick="selectLot(1)">
+              <div class="lot-header">
+                <span class="lot-name">1. Estacionamiento Central</span>
+                <span class="lot-badge-type type-official">
+                  <i data-lucide="trees" style="width: 10px; height: 10px;"></i> 3 Plantas + PB Abierta
+                </span>
+              </div>
+
+              <!-- Conmutador de Plantas -->
+              <div class="levels-selector-bar" onclick="event.stopPropagation();">
+                <button class="level-tab" id="tabPB" onclick="selectLevel(this, 'PB')">PB (74)</button>
+                <button class="level-tab active" id="tabP1" onclick="selectLevel(this, 'P1')">Nivel 1 (42)</button>
+                <button class="level-tab" id="tabP2" onclick="selectLevel(this, 'P2')">Nivel 2 (42)</button>
+              </div>
+
+              <div class="lot-stats-grid">
+                <div class="stat-box">
+                  <span class="stat-caption">Libres</span>
+                  <span class="stat-number avail" id="statLot1Free">78 plazas</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-caption">Capacidad</span>
+                  <span class="stat-number" id="statLot1Cap">158</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-caption">Nivel Actual</span>
+                  <span class="stat-number" id="selectedLevelText">Nivel 1</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ESTACIONAMIENTO 2: Externo (Lienzo Charro en Préstamo) -->
+            <div class="lot-card" id="card-lot-2" onclick="selectLot(2)">
+              <div class="lot-header">
+                <span class="lot-name">2. Lienzo Charro</span>
+                <span class="lot-badge-type type-external">
+                  <i data-lucide="external-link" style="width: 10px; height: 10px;"></i> Externo
+                </span>
+              </div>
+
+              <div class="lot-stats-grid">
+                <div class="stat-box">
+                  <span class="stat-caption">Libres</span>
+                  <span class="stat-number avail" id="statLot2Free">18 plazas</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-caption">Tipo</span>
+                  <span class="stat-number">Superficie</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-caption">Distancia</span>
+                  <span class="stat-number">250 m</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ESTACIONAMIENTO 3: Interior (Docentes/Admin y Desahogo) -->
+            <div class="lot-card" id="card-lot-3" onclick="selectLot(3)">
+              <div class="lot-header">
+                <span class="lot-name">3. Interior Campus</span>
+                <span class="lot-badge-type type-internal">
+                  <i data-lucide="shield-alert" style="width: 10px; height: 10px;"></i> Prioritario
+                </span>
+              </div>
+
+              <div class="lot-stats-grid">
+                <div class="stat-box">
+                  <span class="stat-caption">Personal</span>
+                  <span class="stat-number" id="statLot3Free">4 plazas</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-caption">Desahogo</span>
+                  <span class="stat-number" style="color: var(--status-limited);">Standby (85%)</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-caption">Filtro</span>
+                  <span class="stat-number">RFID</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </aside>
+
+        <!-- ESCENARIO 3D INTERACTIVO THREE.JS -->
+        <section class="three-stage-wrapper">
+          
+          <!-- Notificación emergente de restricción: No cambiar de lugar -->
+          <div class="restriction-toast" id="restrictionToast">
+            <i data-lucide="alert-circle" style="width: 14px; height: 14px; color: #f59e0b; flex-shrink: 0;"></i>
+            <span>Selecciona un cajón libre para agendarlo.</span>
+          </div>
+
+          <!-- Modal de Confirmación de Elección de Cajón -->
+          <div class="bay-confirm-backdrop" id="bayConfirmModal" aria-hidden="true">
+            <div class="bay-confirm-card">
+              <div class="bay-confirm-header">
+                <i data-lucide="help-circle" style="width: 16px; height: 16px; color: var(--accent);"></i>
+                <span>Confirmar Elección de Cajón</span>
+              </div>
+              <p class="bay-confirm-question" id="bayConfirmQuestion">
+                ¿Confirmas que deseas agendar el cajón <strong>#B-14</strong>?
+              </p>
+              <div class="bay-confirm-meta" id="bayConfirmMeta">
+                Ubicación: Cerca del campus • Tolerancia asignada: 10:00 min
+              </div>
+              <div class="bay-confirm-actions">
+                <button class="btn-wire" style="flex: 1; justify-content: center;" onclick="cancelPendingBaySelection()">Cancelar</button>
+                <button class="btn-wire-primary" style="flex: 1; justify-content: center;" onclick="confirmPendingBaySelection()">
+                  <i data-lucide="check" style="width: 13px; height: 13px;"></i> Confirmar Cajón
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Canvas Three.js -->
+          <div id="threeCanvasContainer"></div>
+
+          <!-- HUD Superpuesto 3D Unificado (Limpio y sin sobrecarga visual en móvil) -->
+          <div class="three-overlay-hud">
+            <div class="hud-top-bar">
+              <div class="hud-pill">
+                <i data-lucide="box" style="width: 12px; height: 12px; color: var(--accent);"></i>
+                <span id="hudLotTitle">1. Estacionamiento Central</span>
+              </div>
+
+              <!-- Selector Rápido de Plantas Integrado en la misma línea superior -->
+              <div class="mobile-quick-levels" id="mobileQuickLevels">
+                <button class="m-lvl-btn" id="mTabPB" onclick="selectLevel(document.getElementById('tabPB'), 'PB')">PB</button>
+                <button class="m-lvl-btn active" id="mTabP1" onclick="selectLevel(document.getElementById('tabP1'), 'P1')">N1</button>
+                <button class="m-lvl-btn" id="mTabP2" onclick="selectLevel(document.getElementById('tabP2'), 'P2')">N2</button>
+              </div>
+            </div>
+
+            <!-- Feed de eventos en tiempo real -->
+            <div class="live-feed-ticker">
+              <span class="live-pulse-dot"></span>
+              <span id="simFeedText" class="feed-event-text">Iniciando flujo vehicular multinivel...</span>
+            </div>
+          </div>
+
+          <!-- MENÚ CIRCULAR EXCLUSIVO MÓVIL (Deslizar desde borde izquierdo hacia el centro) -->
+          <div class="radial-menu-backdrop" id="radialMenuBackdrop" onclick="closeMobileRadialMenu()"></div>
+          <div class="radial-edge-handle" id="radialEdgeHandle" onclick="toggleMobileRadialMenu()" title="Desliza hacia el centro para cambiar de estacionamiento">
+            <span class="radial-edge-bar"></span>
+          </div>
+          <div class="mobile-radial-menu" id="mobileRadialMenu" aria-hidden="true">
+            <button class="radial-hub-btn" id="radialHubCampus" onclick="selectMobileLotView(0); closeMobileRadialMenu();" title="Vista General del Campus">
+              <i data-lucide="map" style="width: 17px; height: 17px;"></i>
+              <span>Campus</span>
+            </button>
+
+            <button class="radial-orbit-btn radial-pos-1 active" id="radialLotBtn1" onclick="selectMobileLotView(1); closeMobileRadialMenu();">
+              <i data-lucide="building-2" style="width: 16px; height: 16px;"></i>
+              <span class="radial-btn-label">Principal</span>
+              <span class="radial-btn-count" id="rLotCount1">--</span>
+            </button>
+
+            <button class="radial-orbit-btn radial-pos-2" id="radialLotBtn2" onclick="selectMobileLotView(2); closeMobileRadialMenu();">
+              <i data-lucide="tent" style="width: 16px; height: 16px;"></i>
+              <span class="radial-btn-label">Lienzo</span>
+              <span class="radial-btn-count" id="rLotCount2">--</span>
+            </button>
+
+            <button class="radial-orbit-btn radial-pos-3" id="radialLotBtn3" onclick="selectMobileLotView(3); closeMobileRadialMenu();">
+              <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
+              <span class="radial-btn-label">Interior</span>
+              <span class="radial-btn-count" id="rLotCount3">--</span>
+            </button>
+          </div>
+
+          <!-- Controles de Cámara 3D -->
+          <div class="three-nav-controls">
+            <button class="three-tool-btn active" id="btnCamOverview" title="Vista General del Campus (3 Estacionamientos)" onclick="setCameraCampusOverview()">
+              <i data-lucide="map" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="three-tool-btn" id="btnCamIso" title="Vista Isométrica 3D" onclick="setCameraIsometric()">
+              <i data-lucide="box" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="three-tool-btn" id="btnCamTop" title="Vista Cenital 2D" onclick="setCameraTop()">
+              <i data-lucide="layout-grid" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="three-tool-btn" id="btnCamBay" title="Enfocar Mi Cajón" onclick="setCameraBay()">
+              <i data-lucide="focus" style="width: 14px; height: 14px;"></i>
+            </button>
+          </div>
+
+          <!-- PANEL DE CONTROL DE PARÁMETROS DE SIMULACIÓN (Web Popover & Mobile Drawer) -->
+          <div class="sim-config-panel" id="simConfigPanel">
+            <div class="sim-config-header">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <i data-lucide="sliders-horizontal" style="width: 14px; height: 14px; color: var(--accent);"></i>
+                <span style="font-size: 12px; font-weight: 700; color: var(--text-main);">Motor de Tráfico & Parámetros</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 5px;">
+                <button class="btn-wire mobile-sim-toggle" id="btnMobileToggleSim" style="padding: 2px 7px; font-size: 10px;" onclick="toggleSimulation()">Pausar</button>
+                <button class="btn-wire" style="padding: 2px 7px; font-size: 10px;" onclick="closeSimConfigPanel()">Listo</button>
+              </div>
+            </div>
+
+            <div class="sim-config-body">
+              <!-- Nivel de Tráfico -->
+              <div class="sim-param-group">
+                <div class="sim-param-label">
+                  <span>Nivel de Tráfico</span>
+                  <strong id="lblTrafficLevel">Normal (Máx. 3 autos)</strong>
+                </div>
+                <div class="sim-preset-bar">
+                  <button class="sim-preset-btn" id="btnTrafficLow" onclick="setTrafficLevel('low')">Bajo</button>
+                  <button class="sim-preset-btn active" id="btnTrafficNormal" onclick="setTrafficLevel('normal')">Normal</button>
+                  <button class="sim-preset-btn" id="btnTrafficHigh" onclick="setTrafficLevel('high')">Alto</button>
+                  <button class="sim-preset-btn" id="btnTrafficPeak" onclick="setTrafficLevel('peak')">Hora Pico</button>
+                </div>
+              </div>
+
+              <!-- Tiempo de Entrada y Tiempo de Salida -->
+              <div class="sim-sliders-row">
+                <div class="sim-param-group">
+                  <div class="sim-param-label">
+                    <span>Tiempo de Entrada</span>
+                    <strong id="lblEntryTime">5.5 s</strong>
+                  </div>
+                  <input type="range" class="sim-range" id="rngEntryTime" min="2.5" max="12.0" step="0.5" value="5.5" oninput="updateSimTimings()">
+                </div>
+
+                <div class="sim-param-group">
+                  <div class="sim-param-label">
+                    <span>Tiempo de Salida</span>
+                    <strong id="lblExitTime">5.5 s</strong>
+                  </div>
+                  <input type="range" class="sim-range" id="rngExitTime" min="2.5" max="12.0" step="0.5" value="5.5" oninput="updateSimTimings()">
+                </div>
+              </div>
+
+              <!-- Balance de Flujo (Entrada vs Salida) -->
+              <div class="sim-param-group">
+                <div class="sim-param-label">
+                  <span>Tendencia de Flujo</span>
+                  <strong id="lblFlowBias">Equilibrado (50/50)</strong>
+                </div>
+                <div class="sim-preset-bar">
+                  <button class="sim-preset-btn" id="btnBiasEntry" onclick="setFlowBias('entry')">Priorizar Entrada</button>
+                  <button class="sim-preset-btn active" id="btnBiasBalanced" onclick="setFlowBias('balanced')">Equilibrado</button>
+                  <button class="sim-preset-btn" id="btnBiasExit" onclick="setFlowBias('exit')">Priorizar Salida</button>
+                </div>
+              </div>
+
+              <!-- Lanzador Manual por Planta (Para probar subidas/bajadas a N1 y N2 al instante) -->
+              <div class="sim-param-group">
+                <div class="sim-param-label">
+                  <span>Generar Vehículo en Planta</span>
+                  <span style="font-size: 9px; color: var(--text-subtle);">Prueba de Rampas</span>
+                </div>
+                <div class="sim-manual-triggers">
+                  <select id="selTargetFloor" class="sim-select">
+                    <option value="ALL">Todas las Plantas</option>
+                    <option value="PB">Planta Baja (PB)</option>
+                    <option value="P1">Nivel 1 (Rampa 1)</option>
+                    <option value="P2">Nivel 2 (Doble Rampa)</option>
+                  </select>
+                  <button class="btn-wire-primary" style="padding: 4px 8px; font-size: 10px;" onclick="triggerManualVehicle('arrival')">
+                    <i data-lucide="log-in" style="width: 11px; height: 11px;"></i> + Entrada
+                  </button>
+                  <button class="btn-wire" style="padding: 4px 8px; font-size: 10px;" onclick="triggerManualVehicle('departure')">
+                    <i data-lucide="log-out" style="width: 11px; height: 11px;"></i> - Salida
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tarjeta Flotante de Mi Cajón & Selección de Zona en Móvil -->
+          <div class="mobile-credential-card" id="mobileCredentialCard">
+            <div class="cred-card-header">
+              <div style="display: flex; align-items: center; gap: 7px;">
+                <div class="institution-crest" style="width: 24px; height: 24px; font-size: 11px;">I</div>
+                <div>
+                  <div style="font-size: 11px; font-weight: 700; color: var(--text-main);" id="mobileCredRole">Estudiante Matrícula Activa</div>
+                  <div style="font-size: 9.5px; color: var(--text-muted);">IADA Park • Apartado Automático</div>
+                </div>
+              </div>
+              <button class="btn-wire" style="padding: 3px 7px; font-size: 10px;" onclick="closeMobileCredential()">Cerrar</button>
+            </div>
+            <div class="cred-card-body">
+              <div class="cred-stat">
+                <span>Cajón Apartado</span>
+                <strong id="mobileCredBay">#B-14 (Nivel 1)</strong>
+              </div>
+              <div class="cred-stat">
+                <span>Zona del Campus</span>
+                <strong id="mobileCredZone">1. Estacionamiento Central</strong>
+              </div>
+
+              <div class="zone-assign-group">
+                <span class="zone-assign-label">Agendar cajón rápido por zona:</span>
+                <div class="zone-assign-pills">
+                  <button class="zone-assign-btn active" id="mAssignZone1" onclick="assignBayByZone(1)">Estacionamiento</button>
+                  <button class="zone-assign-btn" id="mAssignZone2" onclick="assignBayByZone(2)">Lienzo</button>
+                  <button class="zone-assign-btn" id="mAssignZone3" onclick="assignBayByZone(3)">Interior</button>
+                </div>
+              </div>
+
+              <!-- Regla de Tiempo Limitado, Ubicación y Agendación Móvil -->
+              <div class="reservation-card-box">
+                <div class="reservation-rule-pill">
+                  <i data-lucide="clock-alert" style="width: 12px; height: 12px; flex-shrink: 0;"></i>
+                  <span><strong>Regla:</strong> Tienes tiempo límite según tu ubicación. Si expira, debes elegir otro cajón distinto.</span>
+                </div>
+                <div class="location-control-row">
+                  <span class="location-label"><i data-lucide="map-pin" style="width: 11px; height: 11px;"></i> Ubicación:</span>
+                  <div class="location-pills">
+                    <button class="loc-pill-btn active" id="mLocNear" onclick="setCampusLocationMode('near')">Cerca (&lt;500m)</button>
+                    <button class="loc-pill-btn" id="mLocFar" onclick="setCampusLocationMode('far')">Lejos (&gt;2km)</button>
+                    <button class="loc-pill-btn" onclick="detectUserCampusLocation()" title="Usar GPS real">GPS</button>
+                  </div>
+                </div>
+                <div class="reservation-controls-row">
+                  <select id="mArrivalWindow" class="reservation-slot-select" onchange="syncArrivalWindowSelects(this.value)">
+                    <option value="Inmediato">Llegada: Inmediata</option>
+                    <option value="+10 min">Ventana: +10 min</option>
+                    <option value="+20 min">Ventana: +20 min</option>
+                    <option value="+30 min">Ventana: +30 min</option>
+                  </select>
+                  <span class="reservation-timer-badge" id="mReservationTimer">SIN RESERVA</span>
+                </div>
+                <div class="reservation-status-line" id="mReservationStatus">Selecciona un cajón libre para agendar</div>
+                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                  <button class="btn-wire" style="padding: 4px 7px; font-size: 9.5px;" id="mBtnBoostTolerance" onclick="requestToleranceIncrease()">
+                    +3m Tolerancia
+                  </button>
+                  <button class="btn-wire-primary" style="flex: 1; justify-content: center; font-size: 10px;" id="mBtnConfirmArrival" onclick="confirmBayArrival()">
+                    <i data-lucide="check-circle-2" style="width: 12px; height: 12px;"></i>
+                    <span>Confirmar Llegada</span>
+                  </button>
+                  <button class="btn-wire" style="padding: 4px 8px; font-size: 10px;" id="mBtnCancelRes" onclick="cancelBayReservation(false)">
+                    Liberar
+                  </button>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 6px; margin-top: 4px;">
+                <button class="btn-wire-primary" style="flex: 1; justify-content: center;" onclick="closeMobileCredential(); setCameraBay();">
+                  <i data-lucide="navigation" style="width: 12px; height: 12px;"></i>
+                  <span id="mobileCredGuideLabel">Guiar a #B-14</span>
+                </button>
+                <button class="btn-wire" style="flex: 1; justify-content: center;" onclick="toggleRole()">
+                  <i data-lucide="repeat" style="width: 12px; height: 12px;"></i>
+                  <span>Alternar Rol</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- INSPECTOR DE CAJONES EN DESKTOP -->
+          <div class="bay-inspect-panel">
+            <div class="bay-inspect-header">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <h3 style="font-size: 12.5px; font-weight: 600; color: var(--text-main);" id="bayInspectTitle">
+                  Cajón Apartado: #B-14
+                </h3>
+                <span class="lock-banner-badge" style="font-size: 9px;" id="bayInspectBadge">
+                  <i data-lucide="bookmark-check" style="width: 9px; height: 9px;"></i>
+                  <span>Sin Reserva Activa</span>
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <div class="zone-assign-pills compact">
+                  <button class="zone-assign-btn active" id="dAssignZone1" onclick="assignBayByZone(1)">Estacionamiento</button>
+                  <button class="zone-assign-btn" id="dAssignZone2" onclick="assignBayByZone(2)">Lienzo</button>
+                  <button class="zone-assign-btn" id="dAssignZone3" onclick="assignBayByZone(3)">Interior</button>
+                </div>
+                <span style="font-size: 10.5px; font-weight: 600; color: var(--status-available);" id="bayInspectSubtitle">Nivel 1 • 42 Cajones</span>
+              </div>
+            </div>
+
+            <!-- Barra de Agendación, Ubicación y Regla de Tiempo Limitado (Desktop) -->
+            <div class="reservation-bar">
+              <div class="reservation-bar-top">
+                <div class="reservation-rule-pill compact">
+                  <i data-lucide="clock-alert" style="width: 12px; height: 12px; flex-shrink: 0;"></i>
+                  <span id="dRuleText"><strong>Regla:</strong> Elige un cajón libre y confírmalo. Si expira el tiempo, debes elegir otro distinto.</span>
+                </div>
+                <span class="reservation-timer-badge" id="dReservationTimer">SIN RESERVA</span>
+              </div>
+              <div class="reservation-bar-actions">
+                <div class="location-pills">
+                  <button class="loc-pill-btn active" id="dLocNear" onclick="setCampusLocationMode('near')" title="Cerca del campus: permite aumento de tolerancia">Cerca (&lt;500m)</button>
+                  <button class="loc-pill-btn" id="dLocFar" onclick="setCampusLocationMode('far')" title="Lejos del campus: no permite aumento de tolerancia">Lejos (&gt;2km)</button>
+                  <button class="loc-pill-btn" onclick="detectUserCampusLocation()" title="Detectar ubicación GPS">GPS</button>
+                </div>
+                <select id="dArrivalWindow" class="reservation-slot-select" onchange="syncArrivalWindowSelects(this.value)">
+                  <option value="Inmediato">Llegada: Inmediata</option>
+                  <option value="+10 min">Ventana: +10 min</option>
+                  <option value="+20 min">Ventana: +20 min</option>
+                  <option value="+30 min">Ventana: +30 min</option>
+                </select>
+                <button class="btn-wire" style="padding: 3px 8px; font-size: 10px;" onclick="quickScheduleCurrentZone()" title="Sugerir y confirmar un cajón libre">
+                  <i data-lucide="calendar-check" style="width: 11px; height: 11px;"></i> Agendar Rápido
+                </button>
+                <button class="btn-wire" style="padding: 3px 8px; font-size: 10px;" id="dBtnBoostTolerance" onclick="requestToleranceIncrease()">
+                  +3m Tolerancia
+                </button>
+                <button class="btn-wire-primary" style="padding: 3px 8px; font-size: 10px;" id="dBtnConfirmArrival" onclick="confirmBayArrival()">
+                  <i data-lucide="check-circle-2" style="width: 11px; height: 11px;"></i> Confirmar Llegada
+                </button>
+                <button class="btn-wire" style="padding: 3px 8px; font-size: 10px;" id="dBtnCancelRes" onclick="cancelBayReservation(false)">
+                  Liberar
+                </button>
+              </div>
+            </div>
+
+            <!-- Grilla 2D interactiva -->
+            <div class="bay-grid" id="bayGrid"></div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+              <div style="display: flex; gap: 10px; font-size: 10px; color: var(--text-muted);">
+                <span style="display: flex; align-items: center; gap: 4px;">
+                  <span style="width: 7px; height: 7px; background: var(--status-available); border-radius: 2px;"></span> Libre
+                </span>
+                <span style="display: flex; align-items: center; gap: 4px;">
+                  <span style="width: 7px; height: 7px; background: var(--accent); border-radius: 2px;"></span> Apartado
+                </span>
+                <span style="display: flex; align-items: center; gap: 4px;">
+                  <span style="width: 7px; height: 7px; background: var(--status-occupied); border-radius: 2px;"></span> Ocupado
+                </span>
+              </div>
+
+              <button class="btn-wire-primary" id="btnNavigateBay" onclick="setCameraBay()">
+                <i data-lucide="navigation-2" style="width: 13px; height: 13px;"></i>
+                <span id="btnNavigateBayLabel">Navegar a #B-14</span>
+              </button>
+            </div>
+          </div>
+
+        </section>
+
+      </div>
+
+      <!-- BARRA DE PESTAÑAS MÓVIL OPTIMIZADA (3 destinos claros; zonas en menú circular) -->
+      <footer class="mobile-tabbar">
+        <button class="tab-item active" id="tabItem3D" onclick="handleMobileTab('3d')">
+          <i data-lucide="compass" style="width: 16px; height: 16px;"></i>
+          <span>Mapa 3D</span>
+        </button>
+        <button class="tab-item" id="tabItemSim" onclick="handleMobileTab('sim')">
+          <i data-lucide="sliders-horizontal" style="width: 16px; height: 16px;"></i>
+          <span>Tráfico</span>
+        </button>
+        <button class="tab-item" id="tabItemUser" onclick="handleMobileTab('user')">
+          <i data-lucide="id-card" style="width: 16px; height: 16px;"></i>
+          <span>Mi Cajón</span>
+        </button>
+      </footer>
+
+    </div>
+  </main>
+
+  <!-- Script modular de la aplicación -->
+  <script src="app.js"></script>
+</body>
+</html>
